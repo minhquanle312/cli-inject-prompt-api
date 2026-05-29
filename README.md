@@ -16,13 +16,15 @@ The plugin stays tool-only:
 
 ## Installation
 
-Install package:
+Install from GitHub:
 
 ```bash
-npm install prompt-inject-opencode
+npm install github:minhquanle312/prompt-inject-opencode
 ```
 
 Create a JSON config file, for example `prompt-inject.json`:
+
+The schema URL still uses the package name path:
 
 ```json
 {
@@ -53,12 +55,17 @@ Register the plugin in OpenCode using tuple options:
 ```jsonc
 {
   "plugin": [
-    ["prompt-inject-opencode", { "config_path": "./prompt-inject.json" }]
+    ["github:minhquanle312/prompt-inject-opencode", { "config_path": "./prompt-inject.json" }]
   ]
 }
 ```
 
 The `config_path` option is required. Relative paths resolve from the plugin input directory.
+
+Even when installed from GitHub, the plugin identifier and published schema path may use different strings:
+
+- install source: `github:minhquanle312/prompt-inject-opencode`
+- schema path: `https://unpkg.com/prompt-inject-opencode/prompt-inject.schema.json`
 
 ## Usage
 
