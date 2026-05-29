@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "prompt-inject-opencode",
+  "version": "0.1.0",
+  "description": "Standalone OpenCode plugin that registers the prompt_inject tool.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./prompt-inject.schema.json": {
+      "default": "./prompt-inject.schema.json"
+    }
+  },
+  "files": [
+    "dist",
+    "prompt-inject.schema.json",
+    "README.md",
+    "ARCHITECTURE.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "npm run build && node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "1.15.12"
+  },
+  "devDependencies": {
+    "@tsconfig/node22": "22.0.2",
+    "@types/node": "24.12.2",
+    "typescript": "5.8.2"
+  }
+}
