@@ -16,19 +16,22 @@ The plugin stays tool-only:
 
 ## Installation
 
-Install from GitHub:
+Clone from GitHub and build locally:
 
 ```bash
-npm install github:minhquanle312/prompt-inject-opencode
+git clone https://github.com/minhquanle312/prompt-inject-opencode.git
+cd prompt-inject-opencode
+npm install
+npm run build
 ```
+
+This repository exports the plugin entry from `dist/index.js`, so the build step is required before loading the plugin from a GitHub checkout.
 
 Create a JSON config file, for example `prompt-inject.json`:
 
-The schema URL still uses the package name path:
-
 ```json
 {
-  "$schema": "https://unpkg.com/prompt-inject-opencode/prompt-inject.schema.json",
+  "$schema": "https://raw.githubusercontent.com/minhquanle312/prompt-inject-opencode/main/prompt-inject.schema.json",
   "version": 1,
   "targets": {
     "agy": {
@@ -55,17 +58,14 @@ Register the plugin in OpenCode using tuple options:
 ```jsonc
 {
   "plugin": [
-    ["github:minhquanle312/prompt-inject-opencode", { "config_path": "./prompt-inject.json" }]
+    ["/absolute/path/to/prompt-inject-opencode", { "config_path": "./prompt-inject.json" }]
   ]
 }
 ```
 
 The `config_path` option is required. Relative paths resolve from the plugin input directory.
 
-Even when installed from GitHub, the plugin identifier and published schema path may use different strings:
-
-- install source: `github:minhquanle312/prompt-inject-opencode`
-- schema path: `https://unpkg.com/prompt-inject-opencode/prompt-inject.schema.json`
+For a local checkout, keep `prompt-inject.json` inside the plugin repository or pass an absolute `config_path`.
 
 ## Usage
 
@@ -131,7 +131,7 @@ Handled failure cases include:
 Public JSON Schema is published at:
 
 ```text
-prompt-inject-opencode/prompt-inject.schema.json
+https://raw.githubusercontent.com/minhquanle312/prompt-inject-opencode/main/prompt-inject.schema.json
 ```
 
 ## Examples
@@ -225,3 +225,67 @@ Current test coverage includes:
 - empty stdout with exit code `0`
 - stderr preservation
 - working directory containment
+
+## Test with OpenCode
+
+Unit tests verify the plugin internals:
+
+```bash
+npm test
+```
+
+To smoke-test the plugin inside OpenCode:
+
+1. Clone and build this repository:
+
+   ```bash
+   git clone https://github.com/minhquanle312/prompt-inject-opencode.git
+   cd prompt-inject-opencode
+   npm install
+   npm run build
+   ```
+
+2. Create `prompt-inject.json` in the plugin repository with at least one real target that exists on your `PATH`:
+
+   ```json
+   {
+     "$schema": "https://raw.githubusercontent.com/minhquanle312/prompt-inject-opencode/main/prompt-inject.schema.json",
+     "version": 1,
+     "targets": {
+       "agy": {
+         "command": "agy",
+         "args_before_prompt": ["-p"],
+         "args_after_prompt": []
+       }
+     }
+   }
+   ```
+
+3. Register the built plugin in your OpenCode config:
+
+   ```jsonc
+   {
+     "plugin": [
+       ["/absolute/path/to/prompt-inject-opencode", { "config_path": "./prompt-inject.json" }]
+     ]
+   }
+   ```
+
+4. Start OpenCode and confirm the plugin loads without startup errors.
+
+5. Run a smoke test by invoking `prompt_inject` with a configured target and a simple prompt.
+
+Expected success signals:
+
+- OpenCode starts without plugin config errors
+- the `prompt_inject` tool is available
+- calling the tool returns structured JSON output
+- `ok: true` and non-empty `content` when the target CLI succeeds
+
+Common failure signals:
+
+- `config_path does not exist or is not readable`
+- `unknown target: ...`
+- `<command> binary not found on PATH`
+- `timed_out: true`
+- `empty_stdout: true` when the CLI exits `0` without stdout

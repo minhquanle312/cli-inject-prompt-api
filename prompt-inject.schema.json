@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://unpkg.com/prompt-inject-opencode/prompt-inject.schema.json",
+  "$id": "https://raw.githubusercontent.com/minhquanle312/prompt-inject-opencode/main/prompt-inject.schema.json",
   "title": "Prompt Inject OpenCode Config",
   "type": "object",
   "additionalProperties": false,
