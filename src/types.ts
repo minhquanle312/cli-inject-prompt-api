@@ -28,7 +28,7 @@ export type ChatMessage = {
 export type ChatCompletionRequest = {
   model: ModelId;
   messages: ChatMessage[];
-  stream?: false;
+  stream?: boolean;
 };
 
 export type RunCommandInput = {

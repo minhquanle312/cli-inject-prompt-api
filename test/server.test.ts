@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, writeFile, chmod } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import type { AddressInfo } from "node:net";
 import { loadConfig } from "../src/config.js";
@@ -63,17 +66,31 @@ test("GET /v1/models returns model list", async () => {
   });
 });
 
-test("POST /v1/chat/completions rejects streaming before spawning backend", async () => {
+test("POST /v1/chat/completions returns SSE when stream is true", async () => {
+  const originalPath = process.env.PATH;
+  const shimDir = await mkdtemp(join(tmpdir(), "prompt-inject-opencode-"));
+  const shimPath = join(shimDir, "agy");
+  await writeFile(shimPath, "#!/bin/sh\nprintf 'hi'\n");
+  await chmod(shimPath, 0o755);
+  process.env.PATH = `${shimDir}:${originalPath ?? ""}`;
   await withServer(async (baseUrl) => {
-    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-      method: "POST",
-      headers: { "content-type": "application/json", ...authHeaders },
-      body: JSON.stringify({ model: "gemini-3.5-flash", stream: true, messages: [{ role: "user", content: "hi" }] }),
-    });
-    assert.equal(response.status, 400);
-    const body = record(await response.json());
-    const error = record(body.error);
-    assert.equal(error.code, "unsupported_stream");
+    try {
+      const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...authHeaders },
+        body: JSON.stringify({ model: "gemini-3.5-flash", stream: true, messages: [{ role: "user", content: "hi" }] }),
+      });
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get("content-type") ?? "", /^text\/event-stream; charset=utf-8/);
+      assert.equal(response.headers.get("cache-control"), "no-cache");
+      const body = await response.text();
+      assert.match(body, /^data: \{"id":"chatcmpl-local-\d+","object":"chat\.completion\.chunk"/m);
+      assert.match(body, /"delta":\{"role":"assistant","content":"hi"\}/);
+      assert.match(body, /"finish_reason":"stop"/);
+      assert.match(body, /data: \[DONE\]/);
+    } finally {
+      process.env.PATH = originalPath;
+    }
   });
 });
 

@@ -7,6 +7,21 @@ export type HttpError = {
   message: string;
 };
 
+export type ChatCompletionChunk = {
+  id: string;
+  object: "chat.completion.chunk";
+  created: number;
+  model: ModelId;
+  choices: Array<{
+    index: 0;
+    delta: {
+      role?: "assistant";
+      content?: string;
+    };
+    finish_reason: "stop" | null;
+  }>;
+};
+
 const roles = new Set<ChatRole>(["system", "developer", "user", "assistant"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -28,9 +43,10 @@ function parseMessage(value: unknown): ChatMessage | HttpError {
 
 export function parseChatCompletionRequest(value: unknown): ChatCompletionRequest | HttpError {
   if (!isRecord(value)) return { status: 400, code: "invalid_request_error", message: "Request body must be a JSON object" };
-  if (value.stream === true) return { status: 400, code: "unsupported_stream", message: "stream=true is not supported by this local proxy" };
   if (value.stream !== undefined && value.stream !== false) {
-    return { status: 400, code: "invalid_request_error", message: "stream must be false when provided" };
+    if (value.stream !== true) {
+      return { status: 400, code: "invalid_request_error", message: "stream must be a boolean when provided" };
+    }
   }
   if (typeof value.model !== "string") return { status: 400, code: "invalid_request_error", message: "model is required" };
   const adapter = getAdapter(value.model);
@@ -46,7 +62,7 @@ export function parseChatCompletionRequest(value: unknown): ChatCompletionReques
     messages.push(parsed);
   }
 
-  return { model: adapter.id, messages, stream: false };
+  return { model: adapter.id, messages, stream: value.stream === true };
 }
 
 export function buildModelsResponse(created = 0): unknown {
@@ -62,6 +78,7 @@ export function buildModelsResponse(created = 0): unknown {
 }
 
 export function buildChatCompletionResponse(model: ModelId, result: CommandSuccess, created = Math.floor(Date.now() / 1000)): unknown {
+  const content = result.stdout.trim();
   return {
     id: `chatcmpl-local-${created}`,
     object: "chat.completion",
@@ -70,12 +87,45 @@ export function buildChatCompletionResponse(model: ModelId, result: CommandSucce
     choices: [
       {
         index: 0,
-        message: { role: "assistant", content: result.stdout.trim() },
+        message: { role: "assistant", content },
         finish_reason: "stop",
       },
     ],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
   };
+}
+
+export function buildChatCompletionChunks(model: ModelId, result: CommandSuccess, created = Math.floor(Date.now() / 1000)): ChatCompletionChunk[] {
+  const content = result.stdout.trim();
+  const id = `chatcmpl-local-${created}`;
+  return [
+    {
+      id,
+      object: "chat.completion.chunk",
+      created,
+      model,
+      choices: [
+        {
+          index: 0,
+          delta: { role: "assistant", content },
+          finish_reason: null,
+        },
+      ],
+    },
+    {
+      id,
+      object: "chat.completion.chunk",
+      created,
+      model,
+      choices: [
+        {
+          index: 0,
+          delta: {},
+          finish_reason: "stop",
+        },
+      ],
+    },
+  ];
 }
 
 export function errorBody(error: HttpError): unknown {

@@ -4,7 +4,7 @@ import { buildPrompt } from "./prompt.js";
 import { runCommand } from "./runner.js";
 import { QueueFullError, Scheduler } from "./scheduler.js";
 import type { ServerConfig } from "./types.js";
-import { buildChatCompletionResponse, buildModelsResponse, commandFailureToHttp, errorBody, type HttpError, parseChatCompletionRequest } from "./openai.js";
+import { buildChatCompletionChunks, buildChatCompletionResponse, buildModelsResponse, commandFailureToHttp, errorBody, type HttpError, parseChatCompletionRequest } from "./openai.js";
 
 type JsonValue = unknown;
 
@@ -17,6 +17,18 @@ function sendJson(response: ServerResponse, status: number, body: JsonValue): vo
     "content-length": Buffer.byteLength(payload),
   });
   response.end(payload);
+}
+
+function sendSse(response: ServerResponse, status: number, chunks: unknown[]): void {
+  response.writeHead(status, {
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-cache",
+    connection: "keep-alive",
+  });
+  for (const chunk of chunks) {
+    response.write(`data: ${JSON.stringify(chunk)}\n\n`);
+  }
+  response.end("data: [DONE]\n\n");
 }
 
 function sendError(response: ServerResponse, error: HttpError): void {
@@ -114,6 +126,10 @@ export function createApp(config: ServerConfig): Server {
         const result = await scheduler.enqueue(adapter, buildPrompt(parsed.messages));
         if (!result.ok) {
           sendError(response, commandFailureToHttp(result));
+          return;
+        }
+        if (parsed.stream === true) {
+          sendSse(response, 200, buildChatCompletionChunks(parsed.model, result));
           return;
         }
         sendJson(response, 200, buildChatCompletionResponse(parsed.model, result));

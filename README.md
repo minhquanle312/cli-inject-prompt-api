@@ -7,7 +7,7 @@ Local-only OpenAI-compatible proxy for fallback sub-agents. It accepts chat-comp
 - `GET /v1/models`
 - `POST /v1/chat/completions`
 
-Streaming is not supported in v1. Requests with `"stream": true` return `400`.
+Streaming is supported as a buffered fake-stream in v1. Requests with `"stream": true` return OpenAI-compatible SSE chunks after the backend command finishes once.
 
 ## Models
 
@@ -68,7 +68,7 @@ curl http://127.0.0.1:3322/v1/chat/completions \
 
 Supported message roles: `system`, `developer`, `user`, `assistant`.
 
-Only string `message.content` is supported. Tool calls, multimodal content arrays, JSON mode, and streaming are not implemented in v1.
+Only string `message.content` is supported. Tool calls and multimodal content arrays are not implemented in v1. Streaming is buffered, not live token streaming.
 
 ## Concurrency
 
