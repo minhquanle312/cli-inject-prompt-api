@@ -47,6 +47,8 @@ Set a strong `API_KEY` in `.env` or in Coolify environment variables, then deplo
 docker compose up --build
 ```
 
+The Compose setup persists CLI auth/data across redeploys with named volumes mounted at `/root/.commandcode` and `/root/.gemini`. If deploying the `Dockerfile` directly in Coolify instead of the Compose file, configure persistent volumes for those same two target paths.
+
 ## Examples
 
 ```bash

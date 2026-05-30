@@ -12,6 +12,9 @@ services:
       GLOBAL_CONCURRENCY: ${GLOBAL_CONCURRENCY:-4}
       MAX_QUEUE: ${MAX_QUEUE:-20}
       TIMEOUT_MS: ${TIMEOUT_MS:-332200}
+    volumes:
+      - commandcode-data:/root/.commandcode
+      - gemini-data:/root/.gemini
     healthcheck:
       test:
         - CMD-SHELL
@@ -20,3 +23,7 @@ services:
       timeout: 20s
       retries: 10
     restart: unless-stopped
+
+volumes:
+  commandcode-data:
+  gemini-data:
