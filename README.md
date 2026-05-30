@@ -13,13 +13,13 @@ Streaming is not supported in v1. Requests with `"stream": true` return `400`.
 
 | API model | Command |
 | --- | --- |
-| `gemini-3.5-flash` | `agy -p` |
+| `gemini-3.5-flash` | `agy -p <prompt>` |
 | `kimi-k2.5` | `cmd -p --model moonshotai/Kimi-K2.5` |
 | `kimi-k2.6` | `cmd -p --model moonshotai/Kimi-K2.6` |
 | `minimax-m2.7` | `cmd -p --model MiniMaxAI/MiniMax-M2.7` |
 | `glm-5.1` | `cmd -p --model zai-org/GLM-5.1` |
 
-Prompt text is sent through stdin. Commands run with `shell: false`.
+Prompt text is sent as a command argument for `agy` and through stdin for `cmd`. Commands run with `shell: false`.
 
 ## Run
 
