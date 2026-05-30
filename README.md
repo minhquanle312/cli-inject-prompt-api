@@ -11,13 +11,13 @@ Streaming is not supported in v1. Requests with `"stream": true` return `400`.
 
 ## Models
 
-| API model | Command |
-| --- | --- |
-| `gemini-3.5-flash` | `agy -p <prompt>` |
-| `kimi-k2.5` | `cmd -p --model moonshotai/Kimi-K2.5` |
-| `kimi-k2.6` | `cmd -p --model moonshotai/Kimi-K2.6` |
-| `minimax-m2.7` | `cmd -p --model MiniMaxAI/MiniMax-M2.7` |
-| `glm-5.1` | `cmd -p --model zai-org/GLM-5.1` |
+| API model          | Command                                 |
+| ------------------ | --------------------------------------- |
+| `gemini-3.5-flash` | `agy -p <prompt>`                       |
+| `kimi-k2.5`        | `cmd -p --model moonshotai/Kimi-K2.5`   |
+| `kimi-k2.6`        | `cmd -p --model moonshotai/Kimi-K2.6`   |
+| `minimax-m2.7`     | `cmd -p --model MiniMaxAI/MiniMax-M2.7` |
+| `glm-5.1`          | `cmd -p --model zai-org/GLM-5.1`        |
 
 Prompt text is sent as a command argument for `agy` and through stdin for `cmd`. Commands run with `shell: false`.
 
@@ -25,6 +25,7 @@ Prompt text is sent as a command argument for `agy` and through stdin for `cmd`.
 
 ```bash
 npm install
+cp .env.example .env
 npm run build
 npm start
 ```
@@ -32,20 +33,31 @@ npm start
 Defaults:
 
 - `HOST=127.0.0.1`
-- `PORT=3000`
+- `PORT=3322`
+- `API_KEY` is required and must be a non-placeholder value with at least 16 characters
 - `GLOBAL_CONCURRENCY=4`
 - `MAX_QUEUE=20`
-- `TIMEOUT_MS=300000`
+- `TIMEOUT_MS=332200`
+
+## Docker / Coolify
+
+Set a strong `API_KEY` in `.env` or in Coolify environment variables, then deploy with the included `Dockerfile` or `docker-compose.yml`.
+
+```bash
+docker compose up --build
+```
 
 ## Examples
 
 ```bash
-curl http://127.0.0.1:3000/v1/models
+curl http://127.0.0.1:3322/v1/models \
+  -H "authorization: Bearer $API_KEY"
 ```
 
 ```bash
-curl http://127.0.0.1:3000/v1/chat/completions \
+curl http://127.0.0.1:3322/v1/chat/completions \
   -H 'content-type: application/json' \
+  -H "authorization: Bearer $API_KEY" \
   -d '{
     "model": "gemini-3.5-flash",
     "messages": [{"role": "user", "content": "Say hello"}]
