@@ -23,6 +23,10 @@ function sendError(response: ServerResponse, error: HttpError): void {
   sendJson(response, error.status, errorBody(error));
 }
 
+function isAuthorized(request: IncomingMessage, apiKey: string): boolean {
+  return request.headers.authorization === `Bearer ${apiKey}`;
+}
+
 function readJsonBody(request: IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -49,10 +53,17 @@ function readJsonBody(request: IncomingMessage): Promise<unknown> {
 }
 
 export function createApp(config: ServerConfig): Server {
+  if (config.apiKey.trim() === "") throw new Error("API_KEY is required");
+
   const scheduler = new Scheduler(config.globalConcurrency, config.maxQueue, runCommand);
 
   return createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", `http://${config.host}:${config.port}`);
+
+    if (!isAuthorized(request, config.apiKey)) {
+      sendError(response, { status: 401, code: "unauthorized", message: "Missing or invalid bearer token" });
+      return;
+    }
 
     if (url.pathname === "/v1/models") {
       if (request.method !== "GET") {

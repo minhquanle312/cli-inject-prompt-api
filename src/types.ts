@@ -12,6 +12,7 @@ export type AdapterConfig = {
 export type ServerConfig = {
   host: string;
   port: number;
+  apiKey: string;
   globalConcurrency: number;
   maxQueue: number;
   defaultTimeoutMs: number;
