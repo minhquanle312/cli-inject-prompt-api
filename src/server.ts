@@ -60,6 +60,15 @@ export function createApp(config: ServerConfig): Server {
   return createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", `http://${config.host}:${config.port}`);
 
+    if (url.pathname === "/healthz") {
+      if (request.method !== "GET") {
+        sendError(response, { status: 405, code: "method_not_allowed", message: "Use GET for /healthz" });
+        return;
+      }
+      sendJson(response, 200, { status: "ok" });
+      return;
+    }
+
     if (!isAuthorized(request, config.apiKey)) {
       sendError(response, { status: 401, code: "unauthorized", message: "Missing or invalid bearer token" });
       return;

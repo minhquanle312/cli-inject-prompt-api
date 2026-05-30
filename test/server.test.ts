@@ -33,6 +33,25 @@ async function withServer<T>(fn: (baseUrl: string) => Promise<T>): Promise<T> {
   }
 }
 
+test("GET /healthz returns ok without bearer token", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/healthz`);
+    assert.equal(response.status, 200);
+    const body = record(await response.json());
+    assert.equal(body.status, "ok");
+  });
+});
+
+test("POST /healthz rejects invalid method without bearer token", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/healthz`, { method: "POST" });
+    assert.equal(response.status, 405);
+    const body = record(await response.json());
+    const error = record(body.error);
+    assert.equal(error.code, "method_not_allowed");
+  });
+});
+
 test("GET /v1/models returns model list", async () => {
   await withServer(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/v1/models`, { headers: authHeaders });
