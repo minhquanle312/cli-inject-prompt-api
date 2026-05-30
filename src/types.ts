@@ -4,6 +4,7 @@ export type AdapterConfig = {
   id: ModelId;
   command: string;
   args: readonly string[];
+  promptTransport: "stdin" | "argument";
   timeoutMs: number;
   concurrency: number;
 };
@@ -32,6 +33,7 @@ export type ChatCompletionRequest = {
 export type RunCommandInput = {
   command: string;
   args: readonly string[];
+  promptTransport: "stdin" | "argument";
   prompt: string;
   timeoutMs: number;
 };

@@ -62,6 +62,7 @@ export class Scheduler {
     this.runner({
       command: job.adapter.command,
       args: job.adapter.args,
+      promptTransport: job.adapter.promptTransport,
       prompt: job.prompt,
       timeoutMs: job.adapter.timeoutMs,
     })

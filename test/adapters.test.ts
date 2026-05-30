@@ -17,6 +17,7 @@ test("gemini adapter uses agy without model flag", () => {
   const adapter = getAdapter("gemini-3.5-flash");
   assert.equal(adapter?.command, "agy");
   assert.deepEqual(adapter?.args, ["-p"]);
+  assert.equal(adapter?.promptTransport, "argument");
 });
 
 test("models response is OpenAI-compatible list", () => {

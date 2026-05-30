@@ -4,7 +4,7 @@ import { Scheduler, QueueFullError } from "../src/scheduler.js";
 import type { AdapterConfig, CommandResult, ModelId, RunCommandInput } from "../src/types.js";
 
 function adapter(id: ModelId): AdapterConfig {
-  return { id, command: id, args: [], timeoutMs: 1000, concurrency: 1 };
+  return { id, command: id, args: [], promptTransport: "stdin", timeoutMs: 1000, concurrency: 1 };
 }
 
 test("scheduler serializes same model", async () => {
