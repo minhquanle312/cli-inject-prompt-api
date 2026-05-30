@@ -12,6 +12,19 @@ test("runner sends prompt to stdin and captures stdout", async () => {
   const result = await runCommand({
     command: node,
     args: ["-e", "process.stdin.on('data', c => process.stdout.write('ok:' + c.toString()))"],
+    promptTransport: "stdin",
+    prompt: "hello",
+    timeoutMs: 5_000,
+  });
+  assert.equal(result.ok, true);
+  if (result.ok) assert.equal(result.stdout, "ok:hello");
+});
+
+test("runner sends prompt as command argument", async () => {
+  const result = await runCommand({
+    command: node,
+    args: ["-e", "process.stdout.write('ok:' + process.argv[1])"],
+    promptTransport: "argument",
     prompt: "hello",
     timeoutMs: 5_000,
   });
@@ -23,6 +36,7 @@ test("runner reports nonzero exit with stderr", async () => {
   const result = await runCommand({
     command: node,
     args: ["-e", "console.error('bad'); process.exit(7)"],
+    promptTransport: "stdin",
     prompt: "",
     timeoutMs: 5_000,
   });
@@ -38,6 +52,7 @@ test("runner times out hanging process", async () => {
   const result = await runCommand({
     command: node,
     args: ["-e", "setTimeout(() => {}, 10000)"],
+    promptTransport: "stdin",
     prompt: "",
     timeoutMs: 50,
   });

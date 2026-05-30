@@ -9,7 +9,8 @@ export function stripAnsi(value: string): string {
 
 export function runCommand(input: RunCommandInput): Promise<CommandResult> {
   return new Promise((resolve) => {
-    const child = spawn(input.command, input.args, {
+    const args = input.promptTransport === "argument" ? [...input.args, input.prompt] : input.args;
+    const child = spawn(input.command, args, {
       shell: false,
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -63,6 +64,7 @@ export function runCommand(input: RunCommandInput): Promise<CommandResult> {
       finish({ ok: true, stdout, stderr, exitCode: 0 });
     });
 
-    child.stdin.end(input.prompt);
+    if (input.promptTransport === "stdin") child.stdin.end(input.prompt);
+    else child.stdin.end();
   });
 }
