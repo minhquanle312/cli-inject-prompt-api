@@ -82,8 +82,10 @@ test("POST /v1/chat/completions returns SSE when stream is true", async () => {
       });
       assert.equal(response.status, 200);
       assert.match(response.headers.get("content-type") ?? "", /^text\/event-stream; charset=utf-8/);
-      assert.equal(response.headers.get("cache-control"), "no-cache");
+      assert.equal(response.headers.get("cache-control"), "no-cache, no-transform");
+      assert.equal(response.headers.get("x-accel-buffering"), "no");
       const body = await response.text();
+      assert.match(body, /^:\n\n/);
       assert.match(body, /^data: \{"id":"chatcmpl-local-\d+","object":"chat\.completion\.chunk"/m);
       assert.match(body, /"delta":\{"role":"assistant"\}/);
       assert.match(body, /"delta":\{"content":"hi"\}/);
@@ -162,7 +164,9 @@ test("POST /v1/responses streams response events", async () => {
       });
       assert.equal(response.status, 200);
       assert.match(response.headers.get("content-type") ?? "", /^text\/event-stream; charset=utf-8/);
+      assert.equal(response.headers.get("x-accel-buffering"), "no");
       const body = await response.text();
+      assert.match(body, /^:\n\n/);
       assert.match(body, /"type":"response\.created"/);
       assert.match(body, /"type":"response\.output_text\.delta".*"delta":"hi"/);
       assert.match(body, /"type":"response\.completed"/);

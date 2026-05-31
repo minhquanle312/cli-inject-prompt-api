@@ -47,9 +47,12 @@ function sendSse(response: ServerResponse, status: number, chunks: unknown[]): v
 function startSse(response: ServerResponse, status: number): void {
   response.writeHead(status, {
     "content-type": "text/event-stream; charset=utf-8",
-    "cache-control": "no-cache",
+    "cache-control": "no-cache, no-transform",
     connection: "keep-alive",
+    "x-accel-buffering": "no",
   });
+  response.flushHeaders();
+  response.write(":\n\n");
 }
 
 function writeSse(response: ServerResponse, chunk: unknown): void {
