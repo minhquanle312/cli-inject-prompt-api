@@ -1,10 +1,19 @@
 import { spawn } from "node:child_process";
-import type { CommandResult, RunCommandInput } from "./types.js";
+import type { CommandOutputEvent, CommandResult, RunCommandInput } from "./types.js";
 
 const ansiPattern = /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
 
 export function stripAnsi(value: string): string {
   return value.replace(ansiPattern, "");
+}
+
+function emitOutput(input: RunCommandInput, event: CommandOutputEvent): void {
+  if (event.text.length === 0) return;
+  try {
+    input.onOutput?.(event);
+  } catch {
+    // Output observers must not affect command execution.
+  }
 }
 
 export function runCommand(input: RunCommandInput): Promise<CommandResult> {
@@ -36,8 +45,14 @@ export function runCommand(input: RunCommandInput): Promise<CommandResult> {
     }, input.timeoutMs);
     timer.unref();
 
-    child.stdout.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
-    child.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdoutChunks.push(chunk);
+      emitOutput(input, { stream: "stdout", text: stripAnsi(chunk.toString("utf8")) });
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderrChunks.push(chunk);
+      emitOutput(input, { stream: "stderr", text: stripAnsi(chunk.toString("utf8")) });
+    });
 
     child.on("error", (error) => {
       finish({

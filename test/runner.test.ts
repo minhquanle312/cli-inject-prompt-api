@@ -20,6 +20,20 @@ test("runner sends prompt to stdin and captures stdout", async () => {
   if (result.ok) assert.equal(result.stdout, "ok:hello");
 });
 
+test("runner reports stdout and stderr incrementally", async () => {
+  const events: string[] = [];
+  const result = await runCommand({
+    command: node,
+    args: ["-e", "process.stdout.write('out'); process.stderr.write('err')"],
+    promptTransport: "stdin",
+    prompt: "",
+    timeoutMs: 5_000,
+    onOutput: (event) => events.push(`${event.stream}:${event.text}`),
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(events.sort(), ["stderr:err", "stdout:out"]);
+});
+
 test("runner sends prompt as command argument", async () => {
   const result = await runCommand({
     command: node,

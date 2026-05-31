@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildChatCompletionChunks, buildChatCompletionResponse, parseChatCompletionRequest } from "../src/openai.js";
+import { buildChatCompletionChunks, buildChatCompletionResponse, buildResponsesResponse, parseChatCompletionRequest, parseResponsesRequest } from "../src/openai.js";
 import { buildPrompt } from "../src/prompt.js";
 
 test("parser accepts stream true", () => {
@@ -11,6 +11,23 @@ test("parser accepts stream true", () => {
 test("parser accepts known model and string messages", () => {
   const parsed = parseChatCompletionRequest({ model: "gemini-3.5-flash", messages: [{ role: "user", content: "hi" }] });
   assert.deepEqual(parsed, { model: "gemini-3.5-flash", messages: [{ role: "user", content: "hi" }], stream: false });
+});
+
+test("parser accepts text content parts", () => {
+  const parsed = parseChatCompletionRequest({
+    model: "gemini-3.5-flash",
+    messages: [{ role: "user", content: [{ type: "text", text: "hi" }, { type: "input_text", text: "there" }] }],
+  });
+  assert.deepEqual(parsed, { model: "gemini-3.5-flash", messages: [{ role: "user", content: "hi\nthere" }], stream: false });
+});
+
+test("responses parser accepts string input and instructions", () => {
+  const parsed = parseResponsesRequest({ model: "gemini-3.5-flash", instructions: "rules", input: "hi", stream: true });
+  assert.deepEqual(parsed, {
+    model: "gemini-3.5-flash",
+    messages: [{ role: "system", content: "rules" }, { role: "user", content: "hi" }],
+    stream: true,
+  });
 });
 
 test("prompt formatter preserves role order", () => {
@@ -27,6 +44,14 @@ test("completion response wraps stdout", () => {
     choices: [{ index: 0, message: { role: "assistant", content: "hello" }, finish_reason: "stop" }],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
   });
+});
+
+test("responses response wraps stdout", () => {
+  const body = buildResponsesResponse("gemini-3.5-flash", { ok: true, stdout: "hello\n", stderr: "", exitCode: 0 }, 123);
+  const response = body as { output: Array<{ content: Array<{ text: string }> }>; status: string; model: string };
+  assert.equal(response.status, "completed");
+  assert.equal(response.model, "gemini-3.5-flash");
+  assert.equal(response.output[0]?.content[0]?.text, "hello");
 });
 
 test("stream chunks wrap stdout and finish", () => {

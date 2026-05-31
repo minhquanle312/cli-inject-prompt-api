@@ -3,8 +3,27 @@ import { getAdapter } from "./adapters.js";
 import { buildPrompt } from "./prompt.js";
 import { runCommand } from "./runner.js";
 import { QueueFullError, Scheduler } from "./scheduler.js";
-import type { ServerConfig } from "./types.js";
-import { buildChatCompletionChunks, buildChatCompletionResponse, buildModelsResponse, commandFailureToHttp, errorBody, type HttpError, parseChatCompletionRequest } from "./openai.js";
+import type { CommandOutputEvent, ServerConfig } from "./types.js";
+import {
+  buildChatCompletionDeltaChunk,
+  buildChatCompletionResponse,
+  buildChatCompletionRoleChunk,
+  buildChatCompletionStopChunk,
+  buildModelsResponse,
+  buildResponseCompletedEvents,
+  buildResponseContentPartAddedEvent,
+  buildResponseCreatedEvent,
+  buildResponseOutputItemAddedEvent,
+  buildResponsesResponse,
+  buildResponseTextDeltaEvent,
+  commandFailureToHttp,
+  createChatCompletionStreamState,
+  createResponsesStreamState,
+  errorBody,
+  type HttpError,
+  parseChatCompletionRequest,
+  parseResponsesRequest,
+} from "./openai.js";
 
 type JsonValue = unknown;
 
@@ -20,14 +39,26 @@ function sendJson(response: ServerResponse, status: number, body: JsonValue): vo
 }
 
 function sendSse(response: ServerResponse, status: number, chunks: unknown[]): void {
+  startSse(response, status);
+  for (const chunk of chunks) writeSse(response, chunk);
+  endSse(response);
+}
+
+function startSse(response: ServerResponse, status: number): void {
   response.writeHead(status, {
     "content-type": "text/event-stream; charset=utf-8",
     "cache-control": "no-cache",
     connection: "keep-alive",
   });
-  for (const chunk of chunks) {
-    response.write(`data: ${JSON.stringify(chunk)}\n\n`);
-  }
+}
+
+function writeSse(response: ServerResponse, chunk: unknown): void {
+  if (response.writableEnded) return;
+  response.write(`data: ${JSON.stringify(chunk)}\n\n`);
+}
+
+function endSse(response: ServerResponse): void {
+  if (response.writableEnded) return;
   response.end("data: [DONE]\n\n");
 }
 
@@ -62,6 +93,10 @@ function readJsonBody(request: IncomingMessage): Promise<unknown> {
     });
     request.on("error", reject);
   });
+}
+
+function formatOutputEvent(event: CommandOutputEvent): string {
+  return event.stream === "stdout" ? event.text : `\n[${event.stream}] ${event.text}`;
 }
 
 export function createApp(config: ServerConfig): Server {
@@ -123,16 +158,137 @@ export function createApp(config: ServerConfig): Server {
       }
 
       try {
+        if (parsed.stream === true) {
+          const state = createChatCompletionStreamState(parsed.model);
+          const pending: string[] = [];
+          let streamStarted = false;
+          let streamedStdout = "";
+          const onOutput = (event: CommandOutputEvent): void => {
+            if (event.stream === "stdout") streamedStdout += event.text;
+            const text = formatOutputEvent(event);
+            if (streamStarted) writeSse(response, buildChatCompletionDeltaChunk(state, text));
+            else pending.push(text);
+          };
+
+          const pendingResult = scheduler.enqueue(adapter, buildPrompt(parsed.messages), onOutput);
+          let immediateError: unknown;
+          pendingResult.catch((error: unknown) => {
+            immediateError = error;
+          });
+          await Promise.resolve();
+          if (immediateError !== undefined) throw immediateError;
+
+          startSse(response, 200);
+          streamStarted = true;
+          writeSse(response, buildChatCompletionRoleChunk(state));
+          for (const text of pending) writeSse(response, buildChatCompletionDeltaChunk(state, text));
+          const result = await pendingResult;
+          if (!result.ok) {
+            writeSse(response, errorBody(commandFailureToHttp(result)));
+            endSse(response);
+            return;
+          }
+          if (streamedStdout.trim() === "" && result.stdout.trim() !== "") {
+            writeSse(response, buildChatCompletionDeltaChunk(state, result.stdout.trim()));
+          }
+          writeSse(response, buildChatCompletionStopChunk(state));
+          endSse(response);
+          return;
+        }
+
         const result = await scheduler.enqueue(adapter, buildPrompt(parsed.messages));
         if (!result.ok) {
           sendError(response, commandFailureToHttp(result));
           return;
         }
-        if (parsed.stream === true) {
-          sendSse(response, 200, buildChatCompletionChunks(parsed.model, result));
+        sendJson(response, 200, buildChatCompletionResponse(parsed.model, result));
+      } catch (error) {
+        if (error instanceof QueueFullError) {
+          sendError(response, { status: 429, code: "queue_full", message: error.message });
           return;
         }
-        sendJson(response, 200, buildChatCompletionResponse(parsed.model, result));
+        const message = error instanceof Error ? error.message : "Unexpected server error";
+        sendError(response, { status: 500, code: "internal_error", message });
+      }
+      return;
+    }
+
+    if (url.pathname === "/v1/responses") {
+      if (request.method !== "POST") {
+        sendError(response, { status: 405, code: "method_not_allowed", message: "Use POST for /v1/responses" });
+        return;
+      }
+
+      let body: unknown;
+      try {
+        body = await readJsonBody(request);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Invalid request body";
+        sendError(response, { status: message.includes("large") ? 413 : 400, code: "invalid_request_error", message });
+        return;
+      }
+
+      const parsed = parseResponsesRequest(body);
+      if ("status" in parsed) {
+        sendError(response, parsed);
+        return;
+      }
+
+      const adapter = getAdapter(parsed.model);
+      if (adapter === undefined) {
+        sendError(response, { status: 400, code: "model_not_found", message: `Unsupported model: ${parsed.model}` });
+        return;
+      }
+
+      try {
+        if (parsed.stream === true) {
+          const state = createResponsesStreamState(parsed.model);
+          const pending: string[] = [];
+          let streamStarted = false;
+          let streamedText = "";
+          const onOutput = (event: CommandOutputEvent): void => {
+            const text = formatOutputEvent(event);
+            streamedText += text;
+            if (streamStarted) writeSse(response, buildResponseTextDeltaEvent(state, text));
+            else pending.push(text);
+          };
+
+          const pendingResult = scheduler.enqueue(adapter, buildPrompt(parsed.messages), onOutput);
+          let immediateError: unknown;
+          pendingResult.catch((error: unknown) => {
+            immediateError = error;
+          });
+          await Promise.resolve();
+          if (immediateError !== undefined) throw immediateError;
+
+          startSse(response, 200);
+          streamStarted = true;
+          writeSse(response, buildResponseCreatedEvent(state));
+          writeSse(response, buildResponseOutputItemAddedEvent(state));
+          writeSse(response, buildResponseContentPartAddedEvent(state));
+          for (const text of pending) writeSse(response, buildResponseTextDeltaEvent(state, text));
+          const result = await pendingResult;
+          if (!result.ok) {
+            const body = errorBody(commandFailureToHttp(result)) as { error: unknown };
+            writeSse(response, { type: "response.failed", response: { id: state.id, status: "failed", error: body.error } });
+            endSse(response);
+            return;
+          }
+          if (streamedText.trim() === "" && result.stdout.trim() !== "") {
+            streamedText = result.stdout.trim();
+            writeSse(response, buildResponseTextDeltaEvent(state, streamedText));
+          }
+          for (const event of buildResponseCompletedEvents(state, streamedText.trim())) writeSse(response, event);
+          endSse(response);
+          return;
+        }
+
+        const result = await scheduler.enqueue(adapter, buildPrompt(parsed.messages));
+        if (!result.ok) {
+          sendError(response, commandFailureToHttp(result));
+          return;
+        }
+        sendJson(response, 200, buildResponsesResponse(parsed.model, result));
       } catch (error) {
         if (error instanceof QueueFullError) {
           sendError(response, { status: 429, code: "queue_full", message: error.message });

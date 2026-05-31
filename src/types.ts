@@ -31,12 +31,24 @@ export type ChatCompletionRequest = {
   stream?: boolean;
 };
 
+export type ResponsesRequest = {
+  model: ModelId;
+  messages: ChatMessage[];
+  stream?: boolean;
+};
+
+export type CommandOutputEvent = {
+  stream: "stdout" | "stderr";
+  text: string;
+};
+
 export type RunCommandInput = {
   command: string;
   args: readonly string[];
   promptTransport: "stdin" | "argument";
   prompt: string;
   timeoutMs: number;
+  onOutput?: (event: CommandOutputEvent) => void;
 };
 
 export type CommandSuccess = {

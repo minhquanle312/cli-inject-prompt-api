@@ -85,8 +85,87 @@ test("POST /v1/chat/completions returns SSE when stream is true", async () => {
       assert.equal(response.headers.get("cache-control"), "no-cache");
       const body = await response.text();
       assert.match(body, /^data: \{"id":"chatcmpl-local-\d+","object":"chat\.completion\.chunk"/m);
-      assert.match(body, /"delta":\{"role":"assistant","content":"hi"\}/);
+      assert.match(body, /"delta":\{"role":"assistant"\}/);
+      assert.match(body, /"delta":\{"content":"hi"\}/);
       assert.match(body, /"finish_reason":"stop"/);
+      assert.match(body, /data: \[DONE\]/);
+    } finally {
+      process.env.PATH = originalPath;
+    }
+  });
+});
+
+test("POST /v1/chat/completions streams stderr terminal output", async () => {
+  const originalPath = process.env.PATH;
+  const shimDir = await mkdtemp(join(tmpdir(), "prompt-inject-opencode-"));
+  const shimPath = join(shimDir, "agy");
+  await writeFile(shimPath, "#!/bin/sh\nprintf 'thinking' >&2\nprintf 'answer'\n");
+  await chmod(shimPath, 0o755);
+  process.env.PATH = `${shimDir}:${originalPath ?? ""}`;
+  await withServer(async (baseUrl) => {
+    try {
+      const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...authHeaders },
+        body: JSON.stringify({ model: "gemini-3.5-flash", stream: true, messages: [{ role: "user", content: "hi" }] }),
+      });
+      assert.equal(response.status, 200);
+      const body = await response.text();
+      assert.match(body, /\[stderr\] thinking/);
+      assert.match(body, /"content":"answer"/);
+    } finally {
+      process.env.PATH = originalPath;
+    }
+  });
+});
+
+test("POST /v1/responses returns OpenAI Responses shape", async () => {
+  const originalPath = process.env.PATH;
+  const shimDir = await mkdtemp(join(tmpdir(), "prompt-inject-opencode-"));
+  const shimPath = join(shimDir, "agy");
+  await writeFile(shimPath, "#!/bin/sh\nprintf 'hi'\n");
+  await chmod(shimPath, 0o755);
+  process.env.PATH = `${shimDir}:${originalPath ?? ""}`;
+  await withServer(async (baseUrl) => {
+    try {
+      const response = await fetch(`${baseUrl}/v1/responses`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...authHeaders },
+        body: JSON.stringify({ model: "gemini-3.5-flash", input: "hi" }),
+      });
+      assert.equal(response.status, 200);
+      const body = record(await response.json());
+      assert.equal(body.object, "response");
+      assert.equal(body.status, "completed");
+      const output = array(body.output);
+      const item = record(output[0]);
+      assert.equal(item.type, "message");
+    } finally {
+      process.env.PATH = originalPath;
+    }
+  });
+});
+
+test("POST /v1/responses streams response events", async () => {
+  const originalPath = process.env.PATH;
+  const shimDir = await mkdtemp(join(tmpdir(), "prompt-inject-opencode-"));
+  const shimPath = join(shimDir, "agy");
+  await writeFile(shimPath, "#!/bin/sh\nprintf 'hi'\n");
+  await chmod(shimPath, 0o755);
+  process.env.PATH = `${shimDir}:${originalPath ?? ""}`;
+  await withServer(async (baseUrl) => {
+    try {
+      const response = await fetch(`${baseUrl}/v1/responses`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...authHeaders },
+        body: JSON.stringify({ model: "gemini-3.5-flash", input: "hi", stream: true }),
+      });
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get("content-type") ?? "", /^text\/event-stream; charset=utf-8/);
+      const body = await response.text();
+      assert.match(body, /"type":"response\.created"/);
+      assert.match(body, /"type":"response\.output_text\.delta".*"delta":"hi"/);
+      assert.match(body, /"type":"response\.completed"/);
       assert.match(body, /data: \[DONE\]/);
     } finally {
       process.env.PATH = originalPath;

@@ -1,10 +1,11 @@
-import type { AdapterConfig, CommandResult, ModelId, RunCommandInput } from "./types.js";
+import type { AdapterConfig, CommandOutputEvent, CommandResult, ModelId, RunCommandInput } from "./types.js";
 
 type Runner = (input: RunCommandInput) => Promise<CommandResult>;
 
 type QueueJob = {
   adapter: AdapterConfig;
   prompt: string;
+  onOutput?: (event: CommandOutputEvent) => void;
   resolve: (result: CommandResult) => void;
   reject: (error: Error) => void;
 };
@@ -27,9 +28,9 @@ export class Scheduler {
     private readonly runner: Runner,
   ) {}
 
-  enqueue(adapter: AdapterConfig, prompt: string): Promise<CommandResult> {
+  enqueue(adapter: AdapterConfig, prompt: string, onOutput?: (event: CommandOutputEvent) => void): Promise<CommandResult> {
     return new Promise((resolve, reject) => {
-      const job: QueueJob = { adapter, prompt, resolve, reject };
+      const job: QueueJob = onOutput === undefined ? { adapter, prompt, resolve, reject } : { adapter, prompt, onOutput, resolve, reject };
       if (this.canRun(adapter)) {
         this.start(job);
         return;
@@ -59,13 +60,16 @@ export class Scheduler {
     this.runningGlobal += 1;
     this.runningByModel.set(job.adapter.id, (this.runningByModel.get(job.adapter.id) ?? 0) + 1);
 
-    this.runner({
+    const input: RunCommandInput = {
       command: job.adapter.command,
       args: job.adapter.args,
       promptTransport: job.adapter.promptTransport,
       prompt: job.prompt,
       timeoutMs: job.adapter.timeoutMs,
-    })
+    };
+    if (job.onOutput !== undefined) input.onOutput = job.onOutput;
+
+    this.runner(input)
       .then(job.resolve, job.reject)
       .finally(() => {
         this.runningGlobal -= 1;
