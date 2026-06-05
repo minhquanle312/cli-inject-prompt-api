@@ -71,6 +71,21 @@ test("prompt formatter injects workspace-agnostic schema and tagged user prompt"
   assert.match(prompt, /<tools>\[\{"type":"function","function":\{"name":"lookup"\}\}\]<\/tools>/);
   assert.match(prompt, /The only callable function names for this request are: lookup\./);
   assert.match(prompt, /Never invent a tool name, alias, synonym, or placeholder\./);
+  assert.match(prompt, /this codebase, this repo, this repository, this project, this workspace, this app/);
+  assert.match(prompt, /analyze this codebase, review this repo, summarize this project, list files in this app/);
+  assert.match(prompt, /use an advertised tool instead of answering from assumptions/);
+  assert.match(prompt, /do not guess and do not fall back to proxy-local facts/);
+});
+
+test("prompt formatter hardens codebase-relative requests against proxy-local leakage", () => {
+  const prompt = buildPrompt([{ role: "user", content: "analyze this codebase" }], {
+    tools: [{ type: "function", function: { name: "read" } }, { type: "function", function: { name: "glob" } }],
+    toolChoice: "auto",
+  });
+  assert.match(prompt, /Requests to analyze, inspect, summarize, review, list, search, explain, or modify files, folders, code, apps, repositories, or workspaces are always about the caller's remote context/);
+  assert.match(prompt, /Never describe, summarize, inspect, or reason about the proxy's own checkout, mounted files, compiled output, or container filesystem/);
+  assert.match(prompt, /If tools are available and the user asks about files, folders, code, repository contents, project structure, or workspace state, use an advertised tool instead of answering from assumptions/);
+  assert.match(prompt, /The only callable function names for this request are: read, glob\./);
 });
 
 test("completion response wraps stdout", () => {
