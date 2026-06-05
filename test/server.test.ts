@@ -120,6 +120,58 @@ test("POST /v1/chat/completions returns SSE when stream is true", async () => {
   });
 });
 
+test("POST /v1/chat/completions honors Accept: text/event-stream when stream is omitted", async () => {
+  const originalPath = process.env.PATH;
+  const shimDir = await mkdtemp(join(tmpdir(), "prompt-inject-opencode-"));
+  const shimPath = join(shimDir, "agy");
+  await writeFile(shimPath, "#!/bin/sh\nprintf 'hi'\n");
+  await chmod(shimPath, 0o755);
+  process.env.PATH = `${shimDir}:${originalPath ?? ""}`;
+  await withServer(async (baseUrl) => {
+    try {
+      const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "text/event-stream", ...authHeaders },
+        body: JSON.stringify({ model: "gemini-3.5-flash", messages: [{ role: "user", content: "hi" }] }),
+      });
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get("content-type") ?? "", /^text\/event-stream; charset=utf-8/);
+      const body = await response.text();
+      assert.match(body, /"delta":\{"role":"assistant"\}/);
+      assert.match(body, /data: \[DONE\]/);
+    } finally {
+      process.env.PATH = originalPath;
+    }
+  });
+});
+
+test("POST /v1/chat/completions keeps explicit stream false even when Accept requests SSE", async () => {
+  const originalPath = process.env.PATH;
+  const shimDir = await mkdtemp(join(tmpdir(), "prompt-inject-opencode-"));
+  const shimPath = join(shimDir, "agy");
+  await writeFile(shimPath, "#!/bin/sh\nprintf 'hi'\n");
+  await chmod(shimPath, 0o755);
+  process.env.PATH = `${shimDir}:${originalPath ?? ""}`;
+  await withServer(async (baseUrl) => {
+    try {
+      const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "text/event-stream", ...authHeaders },
+        body: JSON.stringify({ model: "gemini-3.5-flash", stream: false, messages: [{ role: "user", content: "hi" }] }),
+      });
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get("content-type") ?? "", /^application\/json; charset=utf-8/);
+      const body = record(await response.json());
+      const choices = array(body.choices);
+      const choice = record(choices[0]);
+      const message = record(choice.message);
+      assert.equal(message.content, "hi");
+    } finally {
+      process.env.PATH = originalPath;
+    }
+  });
+});
+
 test("POST /v1/chat/completions streams stderr terminal output", async () => {
   const originalPath = process.env.PATH;
   const shimDir = await mkdtemp(join(tmpdir(), "prompt-inject-opencode-"));
@@ -255,6 +307,31 @@ test("POST /v1/responses streams response events", async () => {
       assert.match(body, /"type":"response\.created"/);
       assert.match(body, /"type":"response\.output_text\.delta".*"delta":"hi"/);
       assert.match(body, /"type":"response\.completed"/);
+      assert.match(body, /data: \[DONE\]/);
+    } finally {
+      process.env.PATH = originalPath;
+    }
+  });
+});
+
+test("POST /v1/responses honors Accept: text/event-stream when stream is omitted", async () => {
+  const originalPath = process.env.PATH;
+  const shimDir = await mkdtemp(join(tmpdir(), "prompt-inject-opencode-"));
+  const shimPath = join(shimDir, "agy");
+  await writeFile(shimPath, "#!/bin/sh\nprintf 'hi'\n");
+  await chmod(shimPath, 0o755);
+  process.env.PATH = `${shimDir}:${originalPath ?? ""}`;
+  await withServer(async (baseUrl) => {
+    try {
+      const response = await fetch(`${baseUrl}/v1/responses`, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "text/event-stream", ...authHeaders },
+        body: JSON.stringify({ model: "gemini-3.5-flash", input: "hi" }),
+      });
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get("content-type") ?? "", /^text\/event-stream; charset=utf-8/);
+      const body = await response.text();
+      assert.match(body, /"type":"response\.created"/);
       assert.match(body, /data: \[DONE\]/);
     } finally {
       process.env.PATH = originalPath;

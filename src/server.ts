@@ -105,6 +105,21 @@ function formatOutputEvent(event: CommandOutputEvent): string {
   return event.stream === "stdout" ? event.text : `\n[${event.stream}] ${event.text}`;
 }
 
+function acceptsEventStream(request: IncomingMessage): boolean {
+  const accept = request.headers.accept;
+  if (typeof accept !== "string") return false;
+  return accept
+    .split(",")
+    .some((value) => value.trim().toLowerCase().startsWith("text/event-stream"));
+}
+
+function shouldStream(request: IncomingMessage, requested: boolean | undefined): boolean {
+  if (requested === false) return false;
+  if (requested === true) return true;
+  if (acceptsEventStream(request)) return true;
+  return true;
+}
+
 function buildPromptOptions<T extends { tools: readonly unknown[]; toolChoice?: unknown }>(parsed: T): { tools: T["tools"]; toolChoice?: T["toolChoice"] } {
   return parsed.toolChoice === undefined ? { tools: parsed.tools } : { tools: parsed.tools, toolChoice: parsed.toolChoice };
 }
@@ -186,7 +201,7 @@ export function createApp(config: ServerConfig): Server {
       }
 
       try {
-        if (parsed.stream === true) {
+        if (shouldStream(request, parsed.stream)) {
           const state = createChatCompletionStreamState(parsed.model);
           const pending: string[] = [];
           let streamStarted = false;
@@ -276,7 +291,7 @@ export function createApp(config: ServerConfig): Server {
       }
 
       try {
-        if (parsed.stream === true) {
+        if (shouldStream(request, parsed.stream)) {
           const state = createResponsesStreamState(parsed.model);
           let stderrOutput = "";
           const onOutput = (event: CommandOutputEvent): void => {
