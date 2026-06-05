@@ -188,7 +188,7 @@ export function parseChatCompletionRequest(value: unknown): ChatCompletionReques
   const toolChoice = parseToolChoice(value.tool_choice);
   if (isRecord(toolChoice) && "status" in toolChoice) return toolChoice as HttpError;
 
-  const request: ChatCompletionRequest = { model: value.model as ModelId, messages, tools, stream: value.stream === true };
+  const request: ChatCompletionRequest = { model: value.model as ModelId, messages, tools, stream: value.stream !== false };
   if (toolChoice !== undefined) request.toolChoice = toolChoice;
   return request;
 }
@@ -227,7 +227,7 @@ export function parseResponsesRequest(value: unknown): ResponsesRequest | HttpEr
   if ("status" in tools) return tools;
   const toolChoice = parseToolChoice(value.tool_choice);
   if (isRecord(toolChoice) && "status" in toolChoice) return toolChoice as HttpError;
-  const request: ResponsesRequest = { model: value.model as ModelId, messages, tools, stream: value.stream === true };
+  const request: ResponsesRequest = { model: value.model as ModelId, messages, tools, stream: value.stream !== false };
   if (toolChoice !== undefined) request.toolChoice = toolChoice;
   return request;
 }
