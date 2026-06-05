@@ -15,6 +15,11 @@ function renderTools(tools: readonly ProxyTool[]): string {
   return `<tools>${escapeBlock(JSON.stringify(tools))}</tools>`;
 }
 
+function renderToolNames(tools: readonly ProxyTool[]): string {
+  if (tools.length === 0) return "none";
+  return tools.map((tool) => tool.function.name).join(", ");
+}
+
 function renderMessage(message: ChatMessage): string {
   const attrs = [`role="${message.role}"`];
   if (message.name) attrs.push(`name="${escapeBlock(message.name)}"`);
@@ -31,6 +36,8 @@ export function buildPrompt(
   messages: readonly ChatMessage[],
   options: { tools?: readonly ProxyTool[]; toolChoice?: ToolChoice } = {},
 ): string {
+  const tools = options.tools ?? [];
+  const toolNames = renderToolNames(tools);
   const injectedSystemPrompt = [
     "You are running behind an OpenAI-compatible proxy.",
     "Treat every request as unrelated to the current workspace, project, directory, machine, repository, Docker container, or proxy runtime unless the user explicitly says it is related.",
@@ -40,15 +47,17 @@ export function buildPrompt(
     "Paths such as /app, /workspace, /root, the current process cwd, and the proxy repository location are always irrelevant unless the caller explicitly provides them.",
     "If the user refers to this directory, current folder, here, or similar relative context without an explicit path, do not substitute any local runtime path and do not anchor the request to the proxy/container environment.",
     "If tools are available, you may decide to call them.",
+    `The only callable function names for this request are: ${toolNames}.`,
+    "Never invent a tool name, alias, synonym, or placeholder.",
+    "If no listed tool fits, return a normal message instead of a tool call.",
     "Return only one JSON object and no extra markdown.",
     'For a normal answer return: {"type":"message","content":"..."}',
-    'For tool calls return: {"type":"tool_calls","tool_calls":[{"id":"call_1","type":"function","function":{"name":"tool_name","arguments":"{\\"key\\":\\"value\\"}"}}]}',
+    'For tool calls return: {"type":"tool_calls","tool_calls":[{"id":"call_1","type":"function","function":{"name":"EXACT_TOOL_NAME_FROM_LIST","arguments":"{\\"key\\":\\"value\\"}"}}]}',
     "The function.arguments field must be a JSON string, not an object.",
     "If you cannot produce the JSON envelope, return plain text only as a fallback.",
   ].join(" ");
 
   const renderedMessages = messages.map(renderMessage).join("");
-  const tools = options.tools ?? [];
   return [
     "<proxy-request>",
     `<proxy-system>${escapeBlock(injectedSystemPrompt)}</proxy-system>`,

@@ -56,6 +56,8 @@ test("prompt formatter injects workspace-agnostic schema and tagged user prompt"
   assert.match(prompt, /Paths such as \/app, \/workspace, \/root/);
   assert.match(prompt, /<user-prompt>hi<\/user-prompt>/);
   assert.match(prompt, /<tools>\[\{"type":"function","function":\{"name":"lookup"\}\}\]<\/tools>/);
+  assert.match(prompt, /The only callable function names for this request are: lookup\./);
+  assert.match(prompt, /Never invent a tool name, alias, synonym, or placeholder\./);
 });
 
 test("completion response wraps stdout", () => {
