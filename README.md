@@ -10,7 +10,7 @@ Local-only OpenAI-compatible proxy for fallback sub-agents. It accepts chat-comp
 - `POST /v1/chat/completions`
 - `POST /v1/responses`
 
-Streaming is supported as a buffered fake-stream in v1. Requests with `"stream": true` return OpenAI-compatible SSE chunks after the backend command finishes once.
+Streaming is supported as a buffered fake-stream in v1. Streaming is enabled by default when `stream` is omitted, and requests only fall back to non-stream JSON when `"stream": false` is sent explicitly.
 
 ## Models
 
@@ -65,6 +65,19 @@ curl http://127.0.0.1:3322/v1/chat/completions \
   -H "authorization: Bearer $API_KEY" \
   -d '{
     "model": "gemini-3.5-flash",
+    "messages": [{"role": "user", "content": "Say hello"}]
+  }'
+```
+
+To force the old non-stream JSON response shape:
+
+```bash
+curl http://127.0.0.1:3322/v1/chat/completions \
+  -H 'content-type: application/json' \
+  -H "authorization: Bearer $API_KEY" \
+  -d '{
+    "model": "gemini-3.5-flash",
+    "stream": false,
     "messages": [{"role": "user", "content": "Say hello"}]
   }'
 ```
