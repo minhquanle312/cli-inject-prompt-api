@@ -18,22 +18,61 @@ export type ServerConfig = {
   defaultTimeoutMs: number;
 };
 
-export type ChatRole = "system" | "user" | "assistant" | "developer";
+export type ChatRole = "system" | "user" | "assistant" | "developer" | "tool";
+
+export type ProxyToolFunction = {
+  name: string;
+  description?: string;
+  parameters?: unknown;
+  strict?: boolean;
+};
+
+export type ProxyTool = {
+  type: "function";
+  function: ProxyToolFunction;
+};
+
+export type ProxyToolChoice =
+  | "none"
+  | "auto"
+  | "required"
+  | {
+      type: "function";
+      function: { name: string };
+    };
+
+export type ToolChoice = ProxyToolChoice;
+
+export type AssistantToolCall = {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
+};
 
 export type ChatMessage = {
   role: ChatRole;
-  content: string;
+  content?: string;
+  name?: string;
+  tool_call_id?: string;
+  tool_calls?: AssistantToolCall[];
 };
 
 export type ChatCompletionRequest = {
   model: ModelId;
   messages: ChatMessage[];
+  tools: ProxyTool[];
+  toolChoice?: ToolChoice;
   stream?: boolean;
 };
 
 export type ResponsesRequest = {
   model: ModelId;
   messages: ChatMessage[];
+  tools: ProxyTool[];
+  toolChoice?: ToolChoice;
   stream?: boolean;
 };
 
@@ -70,3 +109,73 @@ export type CommandFailure = {
 };
 
 export type CommandResult = CommandSuccess | CommandFailure;
+
+export type ParsedAssistantMessage = {
+  kind: "message";
+  content: string;
+};
+
+export type ParsedAssistantToolCalls = {
+  kind: "tool_calls";
+  toolCalls: AssistantToolCall[];
+};
+
+export type ParsedAssistantResult = ParsedAssistantMessage | ParsedAssistantToolCalls;
+
+export type ModelRegistryEntry = AdapterConfig & {
+  provider: string;
+  name: string;
+  description: string;
+  releaseDate: string;
+  lastUpdated: string;
+  capabilities: {
+    toolCall: boolean;
+    structuredOutput: boolean;
+    reasoning: boolean;
+    attachment: boolean;
+    temperature: boolean;
+    topP: boolean;
+    streaming: boolean;
+  };
+  limit: {
+    context: number;
+    output: number;
+  };
+  modalities: {
+    input: string[];
+    output: string[];
+  };
+  knowledge: string;
+  openWeights: boolean;
+};
+
+export type ModelMetadataResponse = Record<
+  string,
+  {
+    id: string;
+    name: string;
+    description: string;
+    release_date: string;
+    last_updated: string;
+    tool_call: boolean;
+    structured_output: boolean;
+    reasoning: boolean;
+    attachment: boolean;
+    temperature: boolean;
+    top_p: boolean;
+    streaming: boolean;
+    open_weights: boolean;
+    knowledge: string;
+    limit: { context: number; output: number };
+    modalities: { input: string[]; output: string[] };
+  }
+>;
+
+export type ModelCatalogResponse = Record<
+  string,
+  {
+    name: string;
+    api: string;
+    models: ModelMetadataResponse;
+  }
+>;

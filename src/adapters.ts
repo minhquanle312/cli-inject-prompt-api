@@ -1,52 +1,11 @@
-import type { AdapterConfig, ModelId } from "./types.js";
-
-export const adapters = {
-  "gemini-3.5-flash": {
-    id: "gemini-3.5-flash",
-    command: "agy",
-    args: ["-p"],
-    promptTransport: "argument",
-    timeoutMs: 300_000,
-    concurrency: 1,
-  },
-  "kimi-k2.5": {
-    id: "kimi-k2.5",
-    command: "cmd",
-    args: ["-p", "--model", "moonshotai/Kimi-K2.5"],
-    promptTransport: "stdin",
-    timeoutMs: 300_000,
-    concurrency: 1,
-  },
-  "kimi-k2.6": {
-    id: "kimi-k2.6",
-    command: "cmd",
-    args: ["-p", "--model", "moonshotai/Kimi-K2.6"],
-    promptTransport: "stdin",
-    timeoutMs: 300_000,
-    concurrency: 1,
-  },
-  "minimax-m2.7": {
-    id: "minimax-m2.7",
-    command: "cmd",
-    args: ["-p", "--model", "MiniMaxAI/MiniMax-M2.7"],
-    promptTransport: "stdin",
-    timeoutMs: 300_000,
-    concurrency: 1,
-  },
-  "glm-5.1": {
-    id: "glm-5.1",
-    command: "cmd",
-    args: ["-p", "--model", "zai-org/GLM-5.1"],
-    promptTransport: "stdin",
-    timeoutMs: 300_000,
-    concurrency: 1,
-  },
-} as const satisfies Record<ModelId, AdapterConfig>;
+import { getModel, listModels, toAdapter } from "./models.js";
+import type { AdapterConfig } from "./types.js";
 
 export function getAdapter(model: string): AdapterConfig | undefined {
-  return Object.values(adapters).find((adapter) => adapter.id === model);
+  const entry = getModel(model);
+  return entry ? toAdapter(entry) : undefined;
 }
 
-export function listModels(): AdapterConfig[] {
-  return Object.values(adapters);
+export function listAdapters(): AdapterConfig[] {
+  return listModels().map(toAdapter);
 }

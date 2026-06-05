@@ -5,7 +5,10 @@ Local-only OpenAI-compatible proxy for fallback sub-agents. It accepts chat-comp
 ## Supported Endpoints
 
 - `GET /v1/models`
+- `GET /v1/models/metadata`
+- `GET /v1/models/catalog`
 - `POST /v1/chat/completions`
+- `POST /v1/responses`
 
 Streaming is supported as a buffered fake-stream in v1. Requests with `"stream": true` return OpenAI-compatible SSE chunks after the backend command finishes once.
 
@@ -68,9 +71,40 @@ curl http://127.0.0.1:3322/v1/chat/completions \
 
 ## Request Subset
 
-Supported message roles: `system`, `developer`, `user`, `assistant`.
+Supported message roles: `system`, `developer`, `user`, `assistant`, `tool`.
 
-Only string `message.content` is supported. Tool calls and multimodal content arrays are not implemented in v1. Streaming is buffered, not live token streaming.
+String `message.content` and text-ish content arrays are supported. The proxy also accepts OpenAI-style `tools`, `tool_choice`, assistant `tool_calls`, and tool messages.
+
+The injected backend prompt is workspace-agnostic by default:
+
+- It tells the CLI not to assume the request is related to the current workspace/project unless the user explicitly says so.
+- It wraps real user text in `<user-prompt>...</user-prompt>`.
+- It asks the CLI to return a strict JSON envelope for either assistant text or tool calls.
+
+If the CLI still returns flat text, the proxy falls back to plain assistant content automatically.
+
+## Tool Call Envelope
+
+Best-effort backend contract:
+
+```json
+{"type":"message","content":"hello"}
+```
+
+```json
+{"type":"tool_calls","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\"q\":\"hello\"}"}}]}
+```
+
+The proxy converts that envelope into real OpenAI-compatible `tool_calls` for `/v1/chat/completions` and `function_call` output items for `/v1/responses`.
+
+## Rich Model Metadata
+
+`/v1/models` stays OpenAI-compatible and minimal.
+
+For richer discovery metadata inspired by [models.dev](https://github.com/anomalyco/models.dev):
+
+- `/v1/models/metadata` returns provider-agnostic model metadata
+- `/v1/models/catalog` returns provider-grouped model metadata
 
 ## Concurrency
 

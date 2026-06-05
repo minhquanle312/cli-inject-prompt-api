@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { getAdapter } from "./adapters.js";
+import { buildModelCatalog, buildModelMetadata } from "./models.js";
 import { buildPrompt } from "./prompt.js";
 import { runCommand } from "./runner.js";
 import { QueueFullError, Scheduler } from "./scheduler.js";
@@ -9,6 +10,7 @@ import {
   buildChatCompletionResponse,
   buildChatCompletionRoleChunk,
   buildChatCompletionStopChunk,
+  buildChatCompletionToolCallsChunk,
   buildModelsResponse,
   buildResponseCompletedEvents,
   buildResponseContentPartAddedEvent,
@@ -20,6 +22,7 @@ import {
   createChatCompletionStreamState,
   createResponsesStreamState,
   errorBody,
+  parseAssistantOutput,
   type HttpError,
   parseChatCompletionRequest,
   parseResponsesRequest,
@@ -102,6 +105,10 @@ function formatOutputEvent(event: CommandOutputEvent): string {
   return event.stream === "stdout" ? event.text : `\n[${event.stream}] ${event.text}`;
 }
 
+function buildPromptOptions<T extends { tools: readonly unknown[]; toolChoice?: unknown }>(parsed: T): { tools: T["tools"]; toolChoice?: T["toolChoice"] } {
+  return parsed.toolChoice === undefined ? { tools: parsed.tools } : { tools: parsed.tools, toolChoice: parsed.toolChoice };
+}
+
 export function createApp(config: ServerConfig): Server {
   if (config.apiKey.trim() === "") throw new Error("API_KEY is required");
 
@@ -130,6 +137,24 @@ export function createApp(config: ServerConfig): Server {
         return;
       }
       sendJson(response, 200, buildModelsResponse());
+      return;
+    }
+
+    if (url.pathname === "/v1/models/metadata") {
+      if (request.method !== "GET") {
+        sendError(response, { status: 405, code: "method_not_allowed", message: "Use GET for /v1/models/metadata" });
+        return;
+      }
+      sendJson(response, 200, buildModelMetadata());
+      return;
+    }
+
+    if (url.pathname === "/v1/models/catalog") {
+      if (request.method !== "GET") {
+        sendError(response, { status: 405, code: "method_not_allowed", message: "Use GET for /v1/models/catalog" });
+        return;
+      }
+      sendJson(response, 200, buildModelCatalog(`http://${config.host}:${config.port}`));
       return;
     }
 
@@ -165,15 +190,16 @@ export function createApp(config: ServerConfig): Server {
           const state = createChatCompletionStreamState(parsed.model);
           const pending: string[] = [];
           let streamStarted = false;
-          let streamedStdout = "";
+          let stderrOutput = "";
           const onOutput = (event: CommandOutputEvent): void => {
-            if (event.stream === "stdout") streamedStdout += event.text;
+            if (event.stream === "stdout") return;
+            stderrOutput += event.text;
             const text = formatOutputEvent(event);
             if (streamStarted) writeSse(response, buildChatCompletionDeltaChunk(state, text));
             else pending.push(text);
           };
 
-          const pendingResult = scheduler.enqueue(adapter, buildPrompt(parsed.messages), onOutput);
+          const pendingResult = scheduler.enqueue(adapter, buildPrompt(parsed.messages, buildPromptOptions(parsed)), onOutput);
           let immediateError: unknown;
           pendingResult.catch((error: unknown) => {
             immediateError = error;
@@ -191,15 +217,21 @@ export function createApp(config: ServerConfig): Server {
             endSse(response);
             return;
           }
-          if (streamedStdout.trim() === "" && result.stdout.trim() !== "") {
-            writeSse(response, buildChatCompletionDeltaChunk(state, result.stdout.trim()));
+          const parsedOutput = parseAssistantOutput(result.stdout);
+          if (parsedOutput.kind === "tool_calls") {
+            writeSse(response, buildChatCompletionToolCallsChunk(state, parsedOutput.toolCalls));
+            writeSse(response, buildChatCompletionStopChunk(state, "tool_calls"));
+            endSse(response);
+            return;
           }
-          writeSse(response, buildChatCompletionStopChunk(state));
+          if (stderrOutput.trim() !== "" && parsedOutput.content.trim() !== "") writeSse(response, buildChatCompletionDeltaChunk(state, "\n"));
+          if (parsedOutput.content.trim() !== "") writeSse(response, buildChatCompletionDeltaChunk(state, parsedOutput.content));
+          writeSse(response, buildChatCompletionStopChunk(state, "stop"));
           endSse(response);
           return;
         }
 
-        const result = await scheduler.enqueue(adapter, buildPrompt(parsed.messages));
+        const result = await scheduler.enqueue(adapter, buildPrompt(parsed.messages, buildPromptOptions(parsed)));
         if (!result.ok) {
           sendError(response, commandFailureToHttp(result));
           return;
@@ -246,17 +278,13 @@ export function createApp(config: ServerConfig): Server {
       try {
         if (parsed.stream === true) {
           const state = createResponsesStreamState(parsed.model);
-          const pending: string[] = [];
-          let streamStarted = false;
-          let streamedText = "";
+          let stderrOutput = "";
           const onOutput = (event: CommandOutputEvent): void => {
-            const text = formatOutputEvent(event);
-            streamedText += text;
-            if (streamStarted) writeSse(response, buildResponseTextDeltaEvent(state, text));
-            else pending.push(text);
+            if (event.stream === "stdout") return;
+            stderrOutput += formatOutputEvent(event);
           };
 
-          const pendingResult = scheduler.enqueue(adapter, buildPrompt(parsed.messages), onOutput);
+          const pendingResult = scheduler.enqueue(adapter, buildPrompt(parsed.messages, buildPromptOptions(parsed)), onOutput);
           let immediateError: unknown;
           pendingResult.catch((error: unknown) => {
             immediateError = error;
@@ -265,11 +293,7 @@ export function createApp(config: ServerConfig): Server {
           if (immediateError !== undefined) throw immediateError;
 
           startSse(response, 200);
-          streamStarted = true;
           writeSse(response, buildResponseCreatedEvent(state));
-          writeSse(response, buildResponseOutputItemAddedEvent(state));
-          writeSse(response, buildResponseContentPartAddedEvent(state));
-          for (const text of pending) writeSse(response, buildResponseTextDeltaEvent(state, text));
           const result = await pendingResult;
           if (!result.ok) {
             const body = errorBody(commandFailureToHttp(result)) as { error: unknown };
@@ -277,16 +301,20 @@ export function createApp(config: ServerConfig): Server {
             endSse(response);
             return;
           }
-          if (streamedText.trim() === "" && result.stdout.trim() !== "") {
-            streamedText = result.stdout.trim();
-            writeSse(response, buildResponseTextDeltaEvent(state, streamedText));
+          const parsedOutput = parseAssistantOutput(result.stdout);
+          if (parsedOutput.kind === "message" && parsedOutput.content.trim() !== "") {
+            writeSse(response, buildResponseOutputItemAddedEvent(state));
+            writeSse(response, buildResponseContentPartAddedEvent(state));
+            if (stderrOutput.trim() !== "") writeSse(response, buildResponseTextDeltaEvent(state, "\n"));
+            if (stderrOutput.trim() !== "") writeSse(response, buildResponseTextDeltaEvent(state, stderrOutput));
+            writeSse(response, buildResponseTextDeltaEvent(state, parsedOutput.content));
           }
-          for (const event of buildResponseCompletedEvents(state, streamedText.trim())) writeSse(response, event);
+          for (const event of buildResponseCompletedEvents(state, parsedOutput)) writeSse(response, event);
           endSse(response);
           return;
         }
 
-        const result = await scheduler.enqueue(adapter, buildPrompt(parsed.messages));
+        const result = await scheduler.enqueue(adapter, buildPrompt(parsed.messages, buildPromptOptions(parsed)));
         if (!result.ok) {
           sendError(response, commandFailureToHttp(result));
           return;

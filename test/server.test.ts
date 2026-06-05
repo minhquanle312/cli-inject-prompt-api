@@ -66,6 +66,29 @@ test("GET /v1/models returns model list", async () => {
   });
 });
 
+test("GET /v1/models/metadata returns rich model metadata", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/v1/models/metadata`, { headers: authHeaders });
+    assert.equal(response.status, 200);
+    const body = record(await response.json());
+    const gemini = record(body["gemini-3.5-flash"]);
+    assert.equal(gemini.tool_call, true);
+    assert.equal(gemini.structured_output, true);
+  });
+});
+
+test("GET /v1/models/catalog returns models.dev-like provider catalog", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/v1/models/catalog`, { headers: authHeaders });
+    assert.equal(response.status, 200);
+    const body = record(await response.json());
+    const agy = record(body.agy);
+    assert.equal(typeof agy.api, "string");
+    const models = record(agy.models);
+    assert.equal(record(models["gemini-3.5-flash"]).tool_call, true);
+  });
+});
+
 test("POST /v1/chat/completions returns SSE when stream is true", async () => {
   const originalPath = process.env.PATH;
   const shimDir = await mkdtemp(join(tmpdir(), "prompt-inject-opencode-"));
@@ -142,6 +165,68 @@ test("POST /v1/responses returns OpenAI Responses shape", async () => {
       const output = array(body.output);
       const item = record(output[0]);
       assert.equal(item.type, "message");
+    } finally {
+      process.env.PATH = originalPath;
+    }
+  });
+});
+
+test("POST /v1/chat/completions returns tool_calls when cli emits tool json", async () => {
+  const originalPath = process.env.PATH;
+  const shimDir = await mkdtemp(join(tmpdir(), "prompt-inject-opencode-"));
+  const shimPath = join(shimDir, "agy");
+  await writeFile(shimPath, "#!/bin/sh\nprintf '%s' '{\"type\":\"tool_calls\",\"tool_calls\":[{\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{\\\"q\\\":\\\"hi\\\"}\"}}]}'\n");
+  await chmod(shimPath, 0o755);
+  process.env.PATH = `${shimDir}:${originalPath ?? ""}`;
+  await withServer(async (baseUrl) => {
+    try {
+      const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...authHeaders },
+        body: JSON.stringify({
+          model: "gemini-3.5-flash",
+          messages: [{ role: "user", content: "hi" }],
+          tools: [{ type: "function", function: { name: "lookup" } }],
+        }),
+      });
+      assert.equal(response.status, 200);
+      const body = record(await response.json());
+      const choices = array(body.choices);
+      const choice = record(choices[0]);
+      assert.equal(choice.finish_reason, "tool_calls");
+      const message = record(choice.message);
+      assert.equal(message.content, null);
+      assert.equal(Array.isArray(message.tool_calls), true);
+    } finally {
+      process.env.PATH = originalPath;
+    }
+  });
+});
+
+test("POST /v1/responses returns function_call items when cli emits tool json", async () => {
+  const originalPath = process.env.PATH;
+  const shimDir = await mkdtemp(join(tmpdir(), "prompt-inject-opencode-"));
+  const shimPath = join(shimDir, "agy");
+  await writeFile(shimPath, "#!/bin/sh\nprintf '%s' '{\"type\":\"tool_calls\",\"tool_calls\":[{\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{\\\"q\\\":\\\"hi\\\"}\"}}]}'\n");
+  await chmod(shimPath, 0o755);
+  process.env.PATH = `${shimDir}:${originalPath ?? ""}`;
+  await withServer(async (baseUrl) => {
+    try {
+      const response = await fetch(`${baseUrl}/v1/responses`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...authHeaders },
+        body: JSON.stringify({
+          model: "gemini-3.5-flash",
+          input: "hi",
+          tools: [{ type: "function", function: { name: "lookup" } }],
+        }),
+      });
+      assert.equal(response.status, 200);
+      const body = record(await response.json());
+      const output = array(body.output);
+      const item = record(output[0]);
+      assert.equal(item.type, "function_call");
+      assert.equal(item.name, "lookup");
     } finally {
       process.env.PATH = originalPath;
     }

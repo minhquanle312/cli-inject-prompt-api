@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildChatCompletionChunks, buildChatCompletionResponse, buildResponsesResponse, parseChatCompletionRequest, parseResponsesRequest } from "../src/openai.js";
+import { buildChatCompletionResponse, buildResponsesResponse, parseAssistantOutput, parseChatCompletionRequest, parseResponsesRequest } from "../src/openai.js";
 import { buildPrompt } from "../src/prompt.js";
 
 test("parser accepts stream true", () => {
   const parsed = parseChatCompletionRequest({ model: "gemini-3.5-flash", stream: true, messages: [{ role: "user", content: "hi" }] });
-  assert.deepEqual(parsed, { model: "gemini-3.5-flash", messages: [{ role: "user", content: "hi" }], stream: true });
+  assert.deepEqual(parsed, { model: "gemini-3.5-flash", messages: [{ role: "user", content: "hi" }], tools: [], stream: true });
 });
 
 test("parser accepts known model and string messages", () => {
   const parsed = parseChatCompletionRequest({ model: "gemini-3.5-flash", messages: [{ role: "user", content: "hi" }] });
-  assert.deepEqual(parsed, { model: "gemini-3.5-flash", messages: [{ role: "user", content: "hi" }], stream: false });
+  assert.deepEqual(parsed, { model: "gemini-3.5-flash", messages: [{ role: "user", content: "hi" }], tools: [], stream: false });
 });
 
 test("parser accepts text content parts", () => {
@@ -18,7 +18,23 @@ test("parser accepts text content parts", () => {
     model: "gemini-3.5-flash",
     messages: [{ role: "user", content: [{ type: "text", text: "hi" }, { type: "input_text", text: "there" }] }],
   });
-  assert.deepEqual(parsed, { model: "gemini-3.5-flash", messages: [{ role: "user", content: "hi\nthere" }], stream: false });
+  assert.deepEqual(parsed, { model: "gemini-3.5-flash", messages: [{ role: "user", content: "hi\nthere" }], tools: [], stream: false });
+});
+
+test("parser accepts tools and tool_choice", () => {
+  const parsed = parseChatCompletionRequest({
+    model: "gemini-3.5-flash",
+    messages: [{ role: "user", content: "hi" }],
+    tools: [{ type: "function", function: { name: "lookup", parameters: { type: "object" } } }],
+    tool_choice: { type: "function", function: { name: "lookup" } },
+  });
+  assert.deepEqual(parsed, {
+    model: "gemini-3.5-flash",
+    messages: [{ role: "user", content: "hi" }],
+    tools: [{ type: "function", function: { name: "lookup", parameters: { type: "object" } } }],
+    toolChoice: { type: "function", function: { name: "lookup" } },
+    stream: false,
+  });
 });
 
 test("responses parser accepts string input and instructions", () => {
@@ -26,12 +42,19 @@ test("responses parser accepts string input and instructions", () => {
   assert.deepEqual(parsed, {
     model: "gemini-3.5-flash",
     messages: [{ role: "system", content: "rules" }, { role: "user", content: "hi" }],
+    tools: [],
     stream: true,
   });
 });
 
-test("prompt formatter preserves role order", () => {
-  assert.equal(buildPrompt([{ role: "system", content: "rules" }, { role: "user", content: "hi" }]), "System:\nrules\n\nUser:\nhi\n\nAssistant:");
+test("prompt formatter injects workspace-agnostic schema and tagged user prompt", () => {
+  const prompt = buildPrompt([{ role: "system", content: "rules" }, { role: "user", content: "hi" }], {
+    tools: [{ type: "function", function: { name: "lookup" } }],
+    toolChoice: "auto",
+  });
+  assert.match(prompt, /Treat every request as unrelated to the current workspace/);
+  assert.match(prompt, /<user-prompt>hi<\/user-prompt>/);
+  assert.match(prompt, /<tools>\[\{"type":"function","function":\{"name":"lookup"\}\}\]<\/tools>/);
 });
 
 test("completion response wraps stdout", () => {
@@ -54,22 +77,31 @@ test("responses response wraps stdout", () => {
   assert.equal(response.output[0]?.content[0]?.text, "hello");
 });
 
-test("stream chunks wrap stdout and finish", () => {
-  const chunks = buildChatCompletionChunks("gemini-3.5-flash", { ok: true, stdout: "hello\n", stderr: "", exitCode: 0 }, 123);
-  assert.deepEqual(chunks, [
-    {
-      id: "chatcmpl-local-123",
-      object: "chat.completion.chunk",
-      created: 123,
-      model: "gemini-3.5-flash",
-      choices: [{ index: 0, delta: { role: "assistant", content: "hello" }, finish_reason: null }],
-    },
-    {
-      id: "chatcmpl-local-123",
-      object: "chat.completion.chunk",
-      created: 123,
-      model: "gemini-3.5-flash",
-      choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-    },
-  ]);
+test("assistant output parser converts tool call envelope", () => {
+  const parsed = parseAssistantOutput('{"type":"tool_calls","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\\"q\\":\\"hello\\"}"}}]}');
+  assert.deepEqual(parsed, {
+    kind: "tool_calls",
+    toolCalls: [{ id: "call_1", type: "function", function: { name: "lookup", arguments: '{"q":"hello"}' } }],
+  });
+});
+
+test("chat completion response exposes tool_calls when cli returns tool envelope", () => {
+  const body = buildChatCompletionResponse(
+    "gemini-3.5-flash",
+    { ok: true, stdout: '{"type":"tool_calls","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\\"q\\":\\"hello\\"}"}}]}\n', stderr: "", exitCode: 0 },
+    123,
+  ) as { choices: Array<{ finish_reason: string; message: { content: string | null; tool_calls?: unknown[] } }> };
+  assert.equal(body.choices[0]?.finish_reason, "tool_calls");
+  assert.equal(body.choices[0]?.message.content, null);
+  assert.equal(Array.isArray(body.choices[0]?.message.tool_calls), true);
+});
+
+test("responses response exposes function_call output when cli returns tool envelope", () => {
+  const body = buildResponsesResponse(
+    "gemini-3.5-flash",
+    { ok: true, stdout: '{"type":"tool_calls","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\\"q\\":\\"hello\\"}"}}]}\n', stderr: "", exitCode: 0 },
+    123,
+  ) as { output: Array<{ type: string; name?: string; arguments?: string }> };
+  assert.equal(body.output[0]?.type, "function_call");
+  assert.equal(body.output[0]?.name, "lookup");
 });

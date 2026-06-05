@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getAdapter, listModels } from "../src/adapters.js";
+import { getAdapter } from "../src/adapters.js";
+import { listModels } from "../src/models.js";
 import { buildModelsResponse } from "../src/openai.js";
 
 test("registry exposes supported models", () => {
