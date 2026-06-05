@@ -10,7 +10,7 @@ Local-only OpenAI-compatible proxy for fallback sub-agents. It accepts chat-comp
 - `POST /v1/chat/completions`
 - `POST /v1/responses`
 
-Streaming is supported as a buffered fake-stream in v1. Streaming is enabled by default when `stream` is omitted, and requests only fall back to non-stream JSON when `"stream": false` is sent explicitly.
+Streaming is supported as a buffered fake-stream in v1. Streaming is enabled by default when `stream` is omitted, the proxy also honors `Accept: text/event-stream`, and requests only fall back to non-stream JSON when `"stream": false` is sent explicitly.
 
 ## Models
 

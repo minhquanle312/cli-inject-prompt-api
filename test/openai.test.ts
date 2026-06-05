@@ -10,7 +10,7 @@ test("parser accepts stream true", () => {
 
 test("parser accepts known model and string messages", () => {
   const parsed = parseChatCompletionRequest({ model: "gemini-3.5-flash", messages: [{ role: "user", content: "hi" }] });
-  assert.deepEqual(parsed, { model: "gemini-3.5-flash", messages: [{ role: "user", content: "hi" }], tools: [], stream: true });
+  assert.deepEqual(parsed, { model: "gemini-3.5-flash", messages: [{ role: "user", content: "hi" }], tools: [] });
 });
 
 test("parser accepts text content parts", () => {
@@ -18,7 +18,7 @@ test("parser accepts text content parts", () => {
     model: "gemini-3.5-flash",
     messages: [{ role: "user", content: [{ type: "text", text: "hi" }, { type: "input_text", text: "there" }] }],
   });
-  assert.deepEqual(parsed, { model: "gemini-3.5-flash", messages: [{ role: "user", content: "hi\nthere" }], tools: [], stream: true });
+  assert.deepEqual(parsed, { model: "gemini-3.5-flash", messages: [{ role: "user", content: "hi\nthere" }], tools: [] });
 });
 
 test("parser accepts tools and tool_choice", () => {
@@ -33,7 +33,6 @@ test("parser accepts tools and tool_choice", () => {
     messages: [{ role: "user", content: "hi" }],
     tools: [{ type: "function", function: { name: "lookup", parameters: { type: "object" } } }],
     toolChoice: { type: "function", function: { name: "lookup" } },
-    stream: true,
   });
 });
 
