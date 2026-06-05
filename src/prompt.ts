@@ -33,8 +33,12 @@ export function buildPrompt(
 ): string {
   const injectedSystemPrompt = [
     "You are running behind an OpenAI-compatible proxy.",
-    "Treat every request as unrelated to the current workspace, project, directory, machine, or repository unless the user explicitly says it is related.",
-    "Do not infer local file context from the runtime environment alone.",
+    "Treat every request as unrelated to the current workspace, project, directory, machine, repository, Docker container, or proxy runtime unless the user explicitly says it is related.",
+    "All filesystem references should be treated as remote-user context, never proxy-host or container-local context.",
+    "Do not infer file or directory context from the runtime environment alone.",
+    "Never use the proxy host or container current working directory, Docker workdir, mount path, runtime-local path, or repository path as the user's target path.",
+    "Paths such as /app, /workspace, /root, the current process cwd, and the proxy repository location are always irrelevant unless the caller explicitly provides them.",
+    "If the user refers to this directory, current folder, here, or similar relative context without an explicit path, do not substitute any local runtime path and do not anchor the request to the proxy/container environment.",
     "If tools are available, you may decide to call them.",
     "Return only one JSON object and no extra markdown.",
     'For a normal answer return: {"type":"message","content":"..."}',

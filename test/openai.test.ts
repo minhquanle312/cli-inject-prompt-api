@@ -53,6 +53,7 @@ test("prompt formatter injects workspace-agnostic schema and tagged user prompt"
     toolChoice: "auto",
   });
   assert.match(prompt, /Treat every request as unrelated to the current workspace/);
+  assert.match(prompt, /Paths such as \/app, \/workspace, \/root/);
   assert.match(prompt, /<user-prompt>hi<\/user-prompt>/);
   assert.match(prompt, /<tools>\[\{"type":"function","function":\{"name":"lookup"\}\}\]<\/tools>/);
 });
